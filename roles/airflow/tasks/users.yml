@@ -1,0 +1,74 @@
+- name: Airflow | Check users
+  become: true
+  become_user: "{{ airflow_user }}"
+  ansible.builtin.command: "{{ airflow_executable }} users list"
+  register: airflow_check_users
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: inventory_hostname in groups['airflow_master']
+
+- name: Airflow | Normalize users list output
+  set_fact:
+    airflow_users_list: "{{ airflow_check_users.stdout_lines | default([]) }}"
+  when: inventory_hostname in groups['airflow_master']
+
+- name: Airflow | Create Admin users
+  become: true
+  become_user: "{{ airflow_user }}"
+  command:
+    argv:
+      - "{{ airflow_executable }}"
+      - users
+      - create
+      - --username
+      - "{{ item.username }}"
+      - --password
+      - "{{ item.password }}"
+      - --firstname
+      - "{{ item.firstname }}"
+      - --lastname
+      - "{{ item.lastname }}"
+      - --role
+      - "{{ item.role }}"
+      - --email
+      - "{{ item.email }}"
+  loop: "{{ airflow_admin_users | default([]) }}"
+  no_log: true
+  when:
+    - inventory_hostname in groups['airflow_master']
+    - item.email is not none
+    - item.email | string | length > 0
+    - item.email not in airflow_users_list
+  failed_when: false
+  changed_when: true
+
+- name: Airflow | Create regular users
+  become: true
+  become_user: "{{ airflow_user }}"
+  command:
+    argv:
+      - "{{ airflow_executable }}"
+      - users
+      - create
+      - --username
+      - "{{ item.username }}"
+      - --password
+      - "{{ item.password }}"
+      - --firstname
+      - "{{ item.firstname }}"
+      - --lastname
+      - "{{ item.lastname }}"
+      - --role
+      - "{{ item.role }}"
+      - --email
+      - "{{ item.email }}"
+  loop: "{{ airflow_regular_users | default([]) }}"
+  no_log: true
+  when:
+    - inventory_hostname in groups['airflow_master']
+    - item.email is not none
+    - item.email | string | length > 0
+    - item.email not in airflow_users_list
+  failed_when: false
+  changed_when: true

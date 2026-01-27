@@ -1,0 +1,12 @@
+# - name: Install and configure Airflow
+#   hosts: all
+#   become: yes
+#   roles:
+#     - airflow
+
+
+- name: Install and configure Apache Airflow
+  hosts: airflow
+  become: true
+  roles:
+    - airflow

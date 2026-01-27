@@ -1,0 +1,79 @@
+# System user
+airflow_user: airflow
+airflow_group: airflow
+
+# ---- PATHS-----------
+airflow_home: /opt/airflow
+airflow_config: /etc/airflow/airflow.cfg
+
+
+# Airflow version
+airflow_version: "2.8.4"
+
+# ---- EXECUTOR ----
+airflow_executor: CeleryExecutor
+
+# ---- REQUIRED PYTHON PACKAGES ----
+airflow_required_python_packages:
+  - { name: SQLAlchemy, version: 1.4.49 }
+  - { name: psycopg2-binary }
+
+# Python
+airflow_python_version: "3.10"
+
+# Admin user
+airflow_admin_user: admin
+airflow_admin_password: admin123
+airflow_admin_email: vinaypate94@gmail.com
+airflow_admin_firstname: Admin
+airflow_admin_lastname: User
+
+# Security
+airflow_fernet_key: "objkfRo5Yc5SSRCxMYtBbWQGmb2cpEXsftdhAq-X1D8="
+airflow_web_secret_key: "YuHQs3-E4I7V1ySPP0_NMq6q9ux92LB7hdbvTAA7TF8"
+
+#DB connection
+airflow_sql_alchemy_conn: "postgresql+psycopg2://airflow:airflow@postgres:5432/airflow"
+
+# airflow_sql_alchemy_conn: "postgresql+psycopg2://airflow:airflow-rds@airflow-rds.cza04cuq2wym.ap-south-1.rds.amazonaws.com:5432/airflow"
+
+# Without this Tables may not be created
+airflow_database_init: true   
+
+# Services
+# airflow_webserver_enabled: true
+# airflow_scheduler_enabled: true
+# airflow_worker_enabled: true
+
+airflow_enable_service: false  #ony use docker not support systemd service 
+airflow_services: {}
+
+airflow_webserver_port: 8080
+
+airflow_cfg:
+  - section: core
+    settings:
+      dags_folder: "{{ airflow_home }}/dags"
+      load_examples: "False"
+
+  - section: core
+    settings:
+      executor: "{{ airflow_executor }}"
+      fernet_key: "{{ airflow_fernet_key }}"
+  
+
+  - section: database
+    settings:
+      sql_alchemy_conn: "{{ airflow_sql_alchemy_conn }}"
+
+  - section: webserver
+    settings:
+      web_server_port: "{{ airflow_webserver_port }}"
+      secret_key: "{{ airflow_web_secret_key }}"
+
+  - section: logging
+    settings:
+      base_log_folder: "{{ airflow_home }}/logs"
+
+
+

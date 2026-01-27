@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5433:5432"
+
+  airflow-web:
+    build: .
+    container_name: airflow-web
+    hostname: airflow-web
+    ports:
+      - "2222:22"
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+  airflow-scheduler:
+    build: .
+    container_name: airflow-scheduler
+    hostname: airflow-scheduler
+    ports:
+      - "2223:22"
+    depends_on:
+      - postgres
+
+  airflow-worker-1:
+    build: .
+    container_name: airflow-worker-1
+    hostname: airflow-worker-1
+    ports:
+      - "2224:22"
+    depends_on:
+      - postgres
+
+  airflow-worker-2:
+    build: .
+    container_name: airflow-worker-2
+    hostname: airflow-worker-2
+    ports:
+      - "2225:22"
+    depends_on:
+      - postgres
+
