@@ -145,8 +145,6 @@ airflow_admin_users:
 # airflow_scheduler_runs: 1000
 airflow_private_tmp: false
 
-
-airflow_services: {}
 airflow_services:
   airflow_webserver:
     service_name: airflow-webserver
