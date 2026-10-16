@@ -1,0 +1,29 @@
+{{ ansible_managed | comment }}
+# Minimal hardened Redis configuration for use as a Celery broker.
+bind {{ redis_bind_address }}
+protected-mode yes
+port {{ redis_port }}
+supervised {{ redis_supervised }}
+pidfile /run/redis/redis-server.pid
+loglevel notice
+logfile "{{ redis_log_path }}"
+dir /var/lib/redis
+
+requirepass "{{ redis_password }}"
+
+maxmemory {{ redis_maxmemory }}
+maxmemory-policy {{ redis_maxmemory_policy }}
+
+appendonly {{ redis_appendonly }}
+{% if redis_save_enabled %}
+save 900 1
+save 300 10
+save 60 10000
+{% else %}
+save ""
+{% endif %}
+
+# Disable potentially dangerous commands from being run accidentally.
+rename-command FLUSHALL ""
+rename-command FLUSHDB ""
+rename-command CONFIG ""

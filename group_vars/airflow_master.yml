@@ -1,0 +1,44 @@
+---
+# Vars for the airflow_master group: runs webserver + scheduler +
+# triggerer, and (by default) the local Celery broker (Redis).
+
+airflow_services:
+  airflow_webserver:
+    service_name: airflow-webserver
+    enabled: true
+    running: true
+    state: started
+    path: airflow-webserver.service.j2
+  airflow_scheduler:
+    service_name: airflow-scheduler
+    enabled: true
+    running: true
+    state: started
+    path: airflow-scheduler.service.j2
+  airflow_triggerer:
+    service_name: airflow-triggerer
+    enabled: true
+    running: true
+    state: started
+    path: airflow-triggerer.service.j2
+  airflow_worker:
+    service_name: airflow-worker
+    enabled: false
+    running: false
+    state: stopped
+    path: airflow-worker.service.j2
+  airflow_flower:
+    service_name: airflow-flower
+    enabled: false
+    running: false
+    state: stopped
+    path: airflow-flower.service.j2
+
+# Self-hosted Redis broker lives on this node (private interface only -
+# see roles/redis/defaults/main.yml redis_bind_address). For AWS, set this
+# to false and point airflow_celery_broker_url (group_vars/airflow/vars.yml)
+# at your ElastiCache endpoint instead.
+redis_manage: true
+
+# This is the single node that runs `airflow db migrate`.
+airflow_run_db_migrate: true

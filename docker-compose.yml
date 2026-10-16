@@ -1,50 +1,166 @@
-version: "3.9"
+---
+# Fully local Airflow 2.10.5 + CeleryExecutor + Redis + PostgreSQL stack
+# for development/testing ONLY. Mirrors the versions and executor the
+# Ansible role deploys to real hosts, but is independent of it - nothing
+# here touches AWS or any live server.
+#
+# Quick start:
+#   cp .env.example .env            # fill in local-only secrets
+#   docker compose up -d --build
+#   open http://localhost:8080  (user/pass from .env)
+#   docker compose --profile flower up -d   # optional: Celery Flower UI
+#   docker compose down -v          # tear down + wipe local volumes
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: dockerfile
+    args:
+      AIRFLOW_VERSION: "2.10.5"
+      PYTHON_VERSION: "3.12"
+  image: airflow-production-local:2.10.5
+  user: "50000:50000"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY}
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    AIRFLOW__CELERY__BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    AIRFLOW__METRICS__STATSD_ON: "false"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./plugins:/opt/airflow/plugins
+    - airflow-logs:/opt/airflow/logs
 
 services:
   postgres:
-    image: postgres:14
-    container_name: postgres
+    image: postgres:16
+    container_name: airflow-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-      POSTGRES_DB: airflow
-    ports:
-      - "5433:5432"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Not published to the host - only reachable from other containers on
+    # this compose network. Use `docker compose exec postgres psql ...`
+    # for local inspection instead of exposing 5432 on localhost.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  airflow-web:
-    build: .
-    container_name: airflow-web
-    hostname: airflow-web
+  redis:
+    image: redis:7.2-alpine
+    container_name: airflow-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate && \
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USERNAME}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD}" \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email "${AIRFLOW_ADMIN_EMAIL}" || true
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: ["airflow", "webserver"]
     ports:
-      - "2222:22"
       - "8080:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
 
   airflow-scheduler:
-    build: .
+    <<: *airflow-common
     container_name: airflow-scheduler
-    hostname: airflow-scheduler
-    ports:
-      - "2223:22"
+    command: ["airflow", "scheduler"]
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$(hostname)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
-  airflow-worker-1:
-    build: .
-    container_name: airflow-worker-1
-    hostname: airflow-worker-1
-    ports:
-      - "2224:22"
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: airflow-triggerer
+    command: ["airflow", "triggerer"]
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
 
-  airflow-worker-2:
-    build: .
-    container_name: airflow-worker-2
-    hostname: airflow-worker-2
-    ports:
-      - "2225:22"
+  airflow-worker:
+    <<: *airflow-common
+    container_name: airflow-worker
+    command: ["airflow", "celery", "worker"]
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
 
+  flower:
+    <<: *airflow-common
+    container_name: airflow-flower
+    command: ["airflow", "celery", "flower"]
+    ports:
+      - "5555:5555"
+    profiles:
+      - flower
+    depends_on:
+      - airflow-worker
+
+volumes:
+  postgres-data:
+  redis-data:
+  airflow-logs:

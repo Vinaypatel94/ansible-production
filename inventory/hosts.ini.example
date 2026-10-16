@@ -1,0 +1,23 @@
+; Copy this file to inventory/hosts.ini and fill in your real hosts.
+; inventory/hosts.ini is gitignored on purpose - it typically contains
+; real IPs/hostnames and SSH key paths that shouldn't be committed.
+;
+; Topology: one "master" node (webserver + scheduler + triggerer + the
+; self-hosted Redis broker) and one or more "worker" nodes (Celery
+; workers only). See group_vars/airflow_master.yml and
+; group_vars/airflow_workers.yml for what runs where.
+;
+; For AWS: point ansible_host at the EC2 private IP (if the control node
+; is already inside the VPC/behind a bastion) or the public IP/EIP
+; otherwise. See docs/DEPLOYMENT.md for the recommended VPC layout.
+
+[airflow_master]
+airflow-master ansible_host=CHANGE_ME.region.compute.amazonaws.com ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/CHANGE_ME.pem ansible_python_interpreter=/usr/bin/python3
+
+[airflow_workers]
+airflow-worker-1 ansible_host=CHANGE_ME_PRIVATE_IP_1 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/CHANGE_ME.pem ansible_python_interpreter=/usr/bin/python3
+airflow-worker-2 ansible_host=CHANGE_ME_PRIVATE_IP_2 ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/CHANGE_ME.pem ansible_python_interpreter=/usr/bin/python3
+
+[airflow:children]
+airflow_master
+airflow_workers

@@ -1,0 +1,27 @@
+---
+# yamllint config tuned for an Ansible project. Defaults to the
+# "ansible-lint"-recommended relaxations: 160-char lines (Jinja
+# expressions and long task names routinely exceed the 80-char
+# default), and tolerant Goss/Jinja flow-mapping brace spacing.
+# See: https://ansible-lint.readthedocs.io/profiles/
+
+extends: default
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  document-start:
+    level: warning
+  braces:
+    max-spaces-inside: 2
+    level: warning
+  comments-indentation:
+    level: warning
+  truthy:
+    allowed-values: ["true", "false", "yes", "no"]
+    level: warning
+
+ignore: |
+  .ansible_tmp/
+  roles/airflow/molecule/default/files/

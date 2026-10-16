@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+{{ ansible_managed | comment('#') }}
+# Dumps the Airflow metadata database with pg_dump, prunes dumps older
+# than the configured retention window, and (optionally) uploads the new
+# dump to S3. Intended to run from cron (see roles/airflow/tasks/backup.yml)
+# but is safe to run manually too.
+set -euo pipefail
+
+BACKUP_DIR="{{ airflow_backup_dir }}"
+RETENTION_DAYS="{{ airflow_backup_retention_days }}"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+DUMP_FILE="${BACKUP_DIR}/airflow-db-${TIMESTAMP}.dump"
+LOG_TAG="airflow-db-backup"
+
+log() { logger -t "${LOG_TAG}" -- "$1"; echo "$1"; }
+
+mkdir -p "${BACKUP_DIR}"
+
+export PGPASSWORD="{{ airflow_db_password }}"
+
+log "Starting backup of {{ airflow_db_name }}@{{ airflow_db_host }}:{{ airflow_db_port }} to ${DUMP_FILE}"
+
+if pg_dump \
+    --host="{{ airflow_db_host }}" \
+    --port="{{ airflow_db_port }}" \
+    --username="{{ airflow_db_user }}" \
+    --dbname="{{ airflow_db_name }}" \
+    --format=custom \
+    --no-password \
+    --file="${DUMP_FILE}"; then
+  log "Backup succeeded: ${DUMP_FILE} ($(du -h "${DUMP_FILE}" | cut -f1))"
+else
+  log "Backup FAILED for {{ airflow_db_name }}"
+  exit 1
+fi
+
+unset PGPASSWORD
+
+{% if airflow_backup_s3_uri %}
+if command -v aws >/dev/null 2>&1; then
+  if aws s3 cp "${DUMP_FILE}" "{{ airflow_backup_s3_uri }}/$(basename "${DUMP_FILE}")"; then
+    log "Uploaded ${DUMP_FILE} to {{ airflow_backup_s3_uri }}"
+  else
+    log "WARNING: S3 upload failed for ${DUMP_FILE} (local copy retained)"
+  fi
+else
+  log "WARNING: airflow_backup_s3_uri is set but the aws CLI is not installed - skipping upload"
+fi
+{% endif %}
+
+log "Pruning local backups older than ${RETENTION_DAYS} days"
+find "${BACKUP_DIR}" -name 'airflow-db-*.dump' -mtime "+${RETENTION_DAYS}" -delete
+
+log "Backup run complete"

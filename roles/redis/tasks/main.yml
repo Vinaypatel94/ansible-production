@@ -1,0 +1,68 @@
+---
+- name: Redis | Skip role when broker is externally managed
+  ansible.builtin.meta: end_play
+  when: not redis_manage
+  tags: always
+
+- name: Redis | Fail fast if no password is configured
+  ansible.builtin.assert:
+    that:
+      - redis_password is defined
+      - redis_password | length >= 16
+    fail_msg: >-
+      redis_password must be set (via Ansible Vault, e.g. vault_redis_password)
+      to a string of at least 16 characters. Refusing to deploy an
+      unauthenticated Redis broker.
+    quiet: true
+
+- name: Redis | Install package
+  ansible.builtin.apt:
+    name: "{{ redis_package }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Redis | Ensure log directory exists
+  ansible.builtin.file:
+    path: "{{ redis_log_path | dirname }}"
+    state: directory
+    owner: "{{ redis_user }}"
+    group: "{{ redis_group }}"
+    mode: "0750"
+
+- name: Redis | Deploy hardened configuration
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "{{ redis_config_path }}"
+    owner: root
+    group: "{{ redis_group }}"
+    mode: "0640"
+  notify: Restart redis
+
+- name: Redis | Enable and start service
+  ansible.builtin.systemd_service:
+    name: "{{ redis_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Redis | Verify broker responds to AUTH + PING
+  ansible.builtin.command:
+    argv:
+      - redis-cli
+      - -h
+      - "{{ redis_bind_address }}"
+      - -p
+      - "{{ redis_port | string }}"
+      - -a
+      - "{{ redis_password }}"
+      - --no-auth-warning
+      - ping
+  register: redis_ping
+  changed_when: false
+  no_log: true
+  retries: 5
+  delay: 2
+  until: redis_ping.stdout is defined and 'PONG' in redis_ping.stdout
+  tags:
+    - validate

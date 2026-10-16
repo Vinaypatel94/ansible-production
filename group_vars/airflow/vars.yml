@@ -1,0 +1,63 @@
+---
+# Non-secret configuration shared by every host in the `airflow` parent
+# group (both airflow_master and airflow_workers inherit this file).
+# All secrets referenced here (vault_*) come from
+# group_vars/airflow/vault.yml, which is Ansible-Vault encrypted and NOT
+# committed to git - see vault.yml.example in this same directory for the
+# required keys and how to generate/encrypt them.
+
+# --- Discrete DB connection parts -----------------------------------------
+# Kept separate (not just a single URI) so the backup role can call
+# pg_dump directly without parsing a connection string in shell, and so
+# the URI below can't drift from what's actually used for backups.
+# For AWS, point airflow_db_host at your RDS endpoint.
+airflow_db_host: "CHANGE_ME.rds.amazonaws.com"
+airflow_db_port: 5432
+airflow_db_name: airflow
+airflow_db_user: airflow
+airflow_db_password: "{{ vault_airflow_db_password }}"
+
+# NOTE: if you generate vault_airflow_db_password with
+# `openssl rand -hex 24` (recommended - see vault.yml.example) it only
+# contains [0-9a-f], so it is always safe to embed directly in a URI with
+# no escaping needed. If you use a different generator, avoid the
+# characters : / ? # @ in the password, or build the connection
+# differently (e.g. via a `.pgpass` file) instead of this URI.
+airflow_sql_alchemy_conn: "postgresql+psycopg2://{{ airflow_db_user }}:{{ airflow_db_password }}@{{ airflow_db_host }}:{{ airflow_db_port }}/{{ airflow_db_name }}"
+
+# --- Security-sensitive values sourced from vault -------------------------
+airflow_fernet_key: "{{ vault_airflow_fernet_key }}"
+airflow_web_secret_key: "{{ vault_airflow_web_secret_key }}"
+
+# --- Admin user ------------------------------------------------------------
+# Created once via `airflow users create` (idempotent - skipped if the
+# email already exists). Rotate by changing vault_airflow_admin_password
+# and re-running `ansible-playbook ... --tags airflow_users` (note: the
+# CLI create command won't update an existing user's password; use
+# `airflow users reset-password` administratively if you need to rotate
+# post-creation, or delete+recreate the account).
+airflow_admin_users:
+  - username: admin
+    password: "{{ vault_airflow_admin_password }}"
+    role: Admin
+    firstname: Admin
+    lastname: User
+    email: "{{ vault_airflow_admin_email }}"
+
+# --- Celery broker ----------------------------------------------------------
+# Self-hosted Redis, co-located on the airflow_master host by default
+# (installed by the `redis` role dependency - see
+# group_vars/airflow_master.yml / airflow_workers.yml for the
+# redis_manage flag and how the broker URL is pointed at the master host
+# from worker hosts).
+redis_password: "{{ vault_redis_password }}"
+
+# --- Backups -----------------------------------------------------------
+# Disabled by default. Flip on once PostgreSQL/RDS + an S3 bucket exist;
+# see docs/DEPLOYMENT.md. If using RDS, prefer RDS automated snapshots as
+# the primary mechanism and treat this as a secondary/portable copy.
+airflow_backup_enabled: false
+# airflow_backup_s3_uri: "s3://CHANGE_ME-airflow-backups/postgres"
+
+# --- Extra operator packages installed on top of [celery,postgres,fab] ---
+airflow_extra_packages: []

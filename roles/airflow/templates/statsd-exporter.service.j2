@@ -1,0 +1,23 @@
+{{ ansible_managed | comment }}
+[Unit]
+Description=Prometheus StatsD exporter (Airflow metrics bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ airflow_statsd_exporter_user }}
+Group={{ airflow_statsd_exporter_user }}
+Type=simple
+ExecStart=/usr/local/bin/statsd_exporter \
+  --statsd.listen-udp=127.0.0.1:{{ airflow_metrics_statsd_port }} \
+  --statsd.mapping-config=/etc/statsd-exporter/mapping.yml \
+  --web.listen-address=127.0.0.1:{{ airflow_statsd_exporter_web_port }}
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+---
+galaxy_info:
+  role_name: redis_broker
+  author: ansible-production project
+  description: >-
+    Minimal, hardened Redis installation used as the Celery broker /
+    result backend for the airflow role. Intended for self-managed
+    single-node brokers (dev, small production). For larger AWS
+    deployments, prefer Amazon ElastiCache and skip this role entirely
+    by setting airflow_redis_managed: false and pointing
+    airflow_celery_broker_url at the ElastiCache endpoint.
+  min_ansible_version: "2.16"
+  license: Apache-2.0
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - redis
+    - celery
+    - broker
+dependencies: []

@@ -1,0 +1,84 @@
+---
+# Fail fast, with a clear message, instead of partially deploying a
+# misconfigured cluster. Run automatically as the first step of the role
+# (see tasks/main.yml) and also available standalone via `--tags validate`.
+
+- name: Preflight | Assert supported OS family
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution in ['Ubuntu', 'Debian']
+    fail_msg: >-
+      This role targets Ubuntu/Debian only (detected
+      {{ ansible_facts.distribution }}). See roles/airflow/meta/main.yml
+      for the supported platform list.
+    quiet: true
+
+- name: Preflight | Assert Fernet key is set and not a known placeholder
+  ansible.builtin.assert:
+    that:
+      - airflow_fernet_key is defined
+      - airflow_fernet_key | length > 0
+      - airflow_fernet_key not in ['objkfRo5Yc5SSRCxMYtBbWQGmb2cpEXsftdhAq-X1D8=', 'xKy13nPFfDflJ0DYGVTwf_DEmbItfURHlEDxrt-bBQw=', 'CHANGEME']
+    fail_msg: >-
+      airflow_fernet_key is unset or still a known example/leaked value.
+      Generate a fresh one with:
+      python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      and store it in group_vars/airflow/vault.yml as vault_airflow_fernet_key.
+    quiet: true
+  no_log: true
+
+- name: Preflight | Assert webserver secret key is set and not a known placeholder
+  ansible.builtin.assert:
+    that:
+      - airflow_web_secret_key is defined
+      - airflow_web_secret_key | length >= 16
+      - airflow_web_secret_key not in ['YuHQs3-E4I7V1ySPP0_NMq6q9ux92LB7hdbvTAA7TF8', 'ihadsf908auw0340684', 'CHANGEME']
+    fail_msg: >-
+      airflow_web_secret_key is unset, too short, or still a known
+      example/leaked value. Generate one with:
+      python3 -c "import secrets; print(secrets.token_hex(32))"
+      and store it in group_vars/airflow/vault.yml as vault_airflow_web_secret_key.
+    quiet: true
+  no_log: true
+
+- name: Preflight | Assert metadata DB connection is configured
+  ansible.builtin.assert:
+    that:
+      - airflow_sql_alchemy_conn is defined
+      - airflow_sql_alchemy_conn | length > 0
+      - "'postgresql' in airflow_sql_alchemy_conn"
+      - "'airflow:airflow@postgres' not in airflow_sql_alchemy_conn"
+    fail_msg: >-
+      airflow_sql_alchemy_conn is unset or still points at the local
+      docker-compose default (airflow:airflow@postgres). Set
+      airflow_sql_alchemy_conn to your real PostgreSQL/RDS endpoint, with
+      the password supplied via vault_airflow_db_password.
+    quiet: true
+  no_log: true
+
+- name: Preflight | Assert admin password is not a known weak/example value
+  ansible.builtin.assert:
+    that:
+      - item.password not in ['admin123', 'password', 'CHANGEME']
+      - item.password | length >= 12
+    fail_msg: >-
+      One of airflow_admin_users has a weak or placeholder password.
+      Use a generated secret stored in group_vars/airflow/vault.yml.
+    quiet: true
+  loop: "{{ airflow_admin_users }}"
+  no_log: true
+
+- name: Preflight | Assert Celery broker is configured
+  ansible.builtin.assert:
+    that:
+      - airflow_celery_broker_url is defined
+      - airflow_celery_broker_url | length > 0
+      - "'@' in airflow_celery_broker_url"
+    fail_msg: >-
+      airflow_celery_broker_url is not configured with credentials. Set
+      vault_redis_password (self-hosted Redis role) or point
+      airflow_celery_broker_url at a managed broker (e.g. AWS
+      ElastiCache) in group_vars.
+    quiet: true
+  no_log: true
+  when: airflow_executor | default('CeleryExecutor') == 'CeleryExecutor'

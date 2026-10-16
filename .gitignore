@@ -1,0 +1,33 @@
+# --- Secrets: never commit these ---
+.vault_pass.txt
+*.vault_pass
+vault.yml
+!vault.yml.example
+*.pem
+*.key
+.env
+
+# --- Real inventory (contains real hostnames/IPs/key paths) ---
+inventory/hosts.ini
+!inventory/hosts.ini.example
+
+# --- Ansible runtime artifacts ---
+*.retry
+.ansible_tmp/
+/home/*/.ansible/tmp/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# --- Molecule / Docker local test state ---
+.cache/
+.pytest_cache/
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+*.swp

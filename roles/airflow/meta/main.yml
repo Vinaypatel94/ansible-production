@@ -9,6 +9,10 @@ galaxy_info:
   min_ansible_version: 2.16.0.0
   license: Apache 2.0
   platforms:
+    - name: Ubuntu
+      versions:
+        - jammy    # 22.04 LTS
+        - noble    # 24.04 LTS (recommended - matches Python 3.12/PostgreSQL 16 defaults)
     - name: Debian
       versions:
         - bookworm
@@ -17,3 +21,7 @@ galaxy_info:
     - airflow
     - apache
     - workflow
+    - celery
+dependencies:
+  - role: redis
+    when: redis_manage | default(true)

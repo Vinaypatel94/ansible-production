@@ -1,0 +1,22 @@
+{#
+  Builds the JSON document consumed by `airflow connections import`.
+  Each item in airflow_admin_connections may provide either:
+    - conn_uri: a full connection URI string, or
+    - conn_type (+ optional host/login/password/schema/port/extra/description)
+  https://airflow.apache.org/docs/apache-airflow/stable/cli-and-env-variables-ref.html#import
+#}
+{%- set result = {} -%}
+{%- for item in airflow_admin_connections -%}
+  {%- if item.conn_uri is defined -%}
+    {%- set _ = result.update({item.conn_id: item.conn_uri}) -%}
+  {%- else -%}
+    {%- set entry = {} -%}
+    {%- for k in ['conn_type', 'description', 'host', 'login', 'password', 'schema', 'port', 'extra'] -%}
+      {%- if item[k] is defined -%}
+        {%- set _ = entry.update({k: item[k]}) -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- set _ = result.update({item.conn_id: entry}) -%}
+  {%- endif -%}
+{%- endfor -%}
+{{ result | to_nice_json }}

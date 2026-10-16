@@ -13,8 +13,11 @@
 
 [Unit]
 Description=Airflow scheduler daemon
-After=network.target postgresql.service mysql.service redis.service rabbitmq-server.service
-Wants=postgresql.service mysql.service redis.service rabbitmq-server.service
+# PostgreSQL/Redis are frequently remote (RDS/ElastiCache) so we only
+# order after network-online.target, not local service units that may
+# not exist on this host.
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 RuntimeDirectory={{ airflow_app_name }}-scheduler
@@ -27,6 +30,9 @@ KillSignal=SIGINT
 Restart=always
 RestartSec=5s
 PrivateTmp={{ airflow_private_tmp }}
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target

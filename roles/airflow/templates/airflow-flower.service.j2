@@ -13,8 +13,8 @@
 
 [Unit]
 Description=Airflow Flower daemon
-After=network.target postgresql.service mysql.service redis.service rabbitmq-server.service
-Wants=postgresql.service mysql.service redis.service rabbitmq-server.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 RuntimeDirectory={{ airflow_app_name }}-flower
@@ -31,6 +31,9 @@ KillSignal=SIGINT
 Restart=on-failure
 RestartSec=10s
 PrivateTmp={{ airflow_private_tmp }}
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target

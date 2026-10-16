@@ -13,8 +13,12 @@
 
 [Unit]
 Description=Airflow celery worker daemon
-After=network.target postgresql.service mysql.service redis.service rabbitmq-server.service
-Wants=postgresql.service mysql.service redis.service rabbitmq-server.service
+# NOTE: deliberately not Requires=/After=redis-server.service here - the
+# broker is frequently on a different host (or AWS ElastiCache) than this
+# worker, and a hard dependency on a local unit that doesn't exist would
+# prevent the worker from starting at all.
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 RuntimeDirectory={{ airflow_app_name }}-worker
@@ -23,7 +27,7 @@ User={{ airflow_user }}
 Group={{ airflow_group }}
 Type=simple
 {% if airflow_version is version( '2.0.0', '>=') %}
-ExecStart={{ airflow_executable }} celery worker --pid {{ airflow_pidfile_folder }}-worker/worker.pid
+ExecStart={{ airflow_executable }} celery worker --concurrency {{ airflow_celery_worker_concurrency }} --pid {{ airflow_pidfile_folder }}-worker/worker.pid
 {% else %}
 ExecStart={{ airflow_executable }} worker --pid {{ airflow_pidfile_folder }}-worker/worker.pid
 {% endif %}
@@ -31,6 +35,12 @@ KillSignal=SIGINT
 Restart=on-failure
 RestartSec=10s
 PrivateTmp={{ airflow_private_tmp }}
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+# Celery workers execute arbitrary task code (DAG operators); give them a
+# generous but bounded shutdown window instead of SIGKILL mid-task.
+TimeoutStopSec=90
 
 [Install]
 WantedBy=multi-user.target

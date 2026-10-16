@@ -1,0 +1,156 @@
+---
+# Safe, local-only smoke test: renders every Jinja2 template the airflow
+# role uses, with representative variables, into /tmp - without
+# installing any package, starting any service, or touching any real
+# host. Useful in CI and for quickly catching variable/merge bugs (this
+# is exactly how the "duplicate [core] section" bug was caught and fixed).
+#
+# Usage:
+#   ansible-playbook playbooks/render-check.yml \
+#     -e @group_vars/airflow/vars.yml \
+#     -e @/tmp/test-vault.yml \
+#     -e @group_vars/airflow_master.yml
+#
+# (see docs/DEPLOYMENT.md "Local validation" for the exact command used
+# in this project, including a disposable test-vault.yml)
+
+- name: Render-only template smoke test (no installs, no services, no real hosts)
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+
+  vars:
+    render_check_dir: /tmp/airflow-render-check
+    airflow_role_path: "{{ playbook_dir }}/../roles/airflow"
+    redis_role_path: "{{ playbook_dir }}/../roles/redis"
+
+  tasks:
+    - name: Load airflow role defaults (so this playbook has every variable the templates need)
+      ansible.builtin.include_vars:
+        dir: "{{ airflow_role_path }}/defaults/main"
+
+    - name: Load redis role defaults
+      ansible.builtin.include_vars:
+        file: "{{ redis_role_path }}/defaults/main.yml"
+      # Values passed via -e (extra-vars) on the command line still win
+      # over these, matching real variable precedence for the pieces that
+      # matter (secrets, DB/broker URLs, service topology).
+
+    - name: Force all filesystem paths into the sandbox dir (never touch real system paths)
+      ansible.builtin.set_fact:
+        airflow_app_home: "{{ render_check_dir }}/app"
+        airflow_conf_path: "{{ render_check_dir }}/conf"
+        airflow_logs_folder: "{{ render_check_dir }}/logs"
+        airflow_child_process_log_folder: "{{ render_check_dir }}/logs/scheduler"
+        airflow_pidfile_folder: "{{ render_check_dir }}/run"
+        airflow_environment_file_folder: "{{ render_check_dir }}/sysconfig"
+
+    - name: Re-derive paths that depend on the ones just overridden
+      ansible.builtin.set_fact:
+        airflow_dags_folder: "{{ airflow_app_home }}/dags"
+        airflow_plugins_folder: "{{ airflow_app_home }}/plugins"
+
+    - name: Ensure sandbox directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ airflow_app_home }}"
+        - "{{ airflow_conf_path }}"
+        - "{{ airflow_logs_folder }}"
+        - "{{ airflow_child_process_log_folder }}"
+        - "{{ airflow_environment_file_folder }}"
+
+    - name: Render airflow.cfg (validates the lists_mergeby section merge - no duplicate sections)
+      ansible.builtin.template:
+        src: "{{ airflow_role_path }}/templates/airflow.cfg.j2"
+        dest: "{{ airflow_conf_path }}/airflow.cfg"
+        mode: "0644"
+
+    - name: Assert no duplicate [section] headers were produced
+      ansible.builtin.shell: >
+        set -o pipefail;
+        grep -oE '^\[[a-z_]+\]$' {{ airflow_conf_path }}/airflow.cfg | sort | uniq -d
+      register: render_check_dupes
+      changed_when: false
+      failed_when: render_check_dupes.stdout | length > 0
+      args:
+        executable: /bin/bash
+
+    - name: Render webserver_config.py
+      ansible.builtin.template:
+        src: "{{ airflow_role_path }}/templates/webserver_config.j2"
+        dest: "{{ airflow_app_home }}/webserver_config.py"
+        mode: "0644"
+
+    - name: Render environment file + profile.d file
+      ansible.builtin.template:
+        src: "{{ airflow_role_path }}/templates/{{ item.src }}"
+        dest: "{{ render_check_dir }}/{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - { src: "airflow-environment-file.j2", dest: "airflow-env" }
+        - { src: "airflow-profile.d-file.j2", dest: "airflow-profile.sh" }
+
+    - name: Render every systemd unit template
+      ansible.builtin.template:
+        src: "{{ airflow_role_path }}/templates/{{ item.value.path }}"
+        dest: "{{ render_check_dir }}/{{ item.value.service_name }}.service"
+        mode: "0644"
+      loop: "{{ airflow_services | dict2items }}"
+
+    - name: Render Redis config template
+      ansible.builtin.template:
+        src: "{{ redis_role_path }}/templates/redis.conf.j2"
+        dest: "{{ render_check_dir }}/redis.conf"
+        mode: "0644"
+      vars:
+        redis_password: "render-check-only"
+
+    - name: Render monitoring templates
+      ansible.builtin.template:
+        src: "{{ airflow_role_path }}/templates/{{ item }}"
+        dest: "{{ render_check_dir }}/{{ item | basename }}"
+        mode: "0644"
+      loop:
+        - statsd-exporter.service.j2
+        - statsd-exporter-mapping.yml.j2
+
+    - name: Set representative sample variables/connections data (set_fact, not task vars - must outrank the include_vars-loaded empty-list defaults)
+      ansible.builtin.set_fact:
+        airflow_admin_variables:
+          - { key: "example_bucket", value: "render-check-bucket" }
+        airflow_admin_connections:
+          - { conn_id: "example_uri_conn", conn_uri: "postgres://user:pass@host:5432/db" }
+          - { conn_id: "example_fields_conn", conn_type: "http", host: "example.invalid", login: "user", password: "pass", port: 443 }
+
+    - name: Render secrets-bearing variables/connections JSON (with representative, non-real sample data)
+      ansible.builtin.template:
+        src: "{{ airflow_role_path }}/templates/{{ item.src }}"
+        dest: "{{ render_check_dir }}/{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - { src: "airflow-variables.json.j2", dest: "variables.json" }
+        - { src: "airflow-connections.json.j2", dest: "connections.json" }
+
+    - name: Validate rendered JSON files actually parse
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - "import json,sys; json.load(open(sys.argv[1]))"
+          - "{{ render_check_dir }}/{{ item }}"
+      loop:
+        - variables.json
+        - connections.json
+      changed_when: false
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: >-
+          All templates rendered successfully under {{ render_check_dir }}
+          with no duplicate airflow.cfg sections and valid JSON output.
+          Inspect the files there manually if you want to double-check
+          content.

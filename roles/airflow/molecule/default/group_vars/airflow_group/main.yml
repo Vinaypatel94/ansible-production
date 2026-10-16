@@ -1,53 +1,102 @@
 ---
+# Molecule test fixture vars. These are throwaway values used only inside
+# ephemeral Docker test containers (never deployed to real
+# infrastructure) - still not "real" secrets, but kept obviously
+# synthetic to avoid any confusion with production values.
+#
+# `postgres` and `redis` below are the hostnames of the sibling test
+# containers defined in molecule.yml, reachable over the Molecule-managed
+# docker network - this exercises the real CeleryExecutor + PostgreSQL +
+# Redis topology, matching production, instead of a SequentialExecutor +
+# sqlite stand-in.
 
 airflow_webserver_host: 0.0.0.0
 airflow_flower_port: 5555
 airflow_flower_host: 0.0.0.0
 
+airflow_db_host: postgres
+airflow_db_port: 5432
+airflow_db_name: airflow
+airflow_db_user: airflow
+airflow_db_password: "molecule-test-only-not-real"
+airflow_sql_alchemy_conn: "postgresql+psycopg2://{{ airflow_db_user }}:{{ airflow_db_password }}@{{ airflow_db_host }}:{{ airflow_db_port }}/{{ airflow_db_name }}"
+
+redis_password: "molecule-test-only-not-real"
+airflow_celery_broker_url: "redis://:{{ redis_password }}@redis:6379/0"
+airflow_celery_result_backend: "db+{{ airflow_sql_alchemy_conn }}"
+
+airflow_fernet_key: "xKy13nPFfDflJ0DYGVTwf_DEmbItfURHlEDxrt-bBQw="  # molecule-test-only, not a real key
+airflow_web_secret_key: "molecule-test-only-not-a-real-secret-00000000"
+
 airflow_cfg_base:
   - section: core
     settings:
       load_examples: true
-      fernet_key: xKy13nPFfDflJ0DYGVTwf_DEmbItfURHlEDxrt-bBQw= # Example keys
-  - section: webserver
-    settings:
-      secret_key: "ihadsf908auw0340684" # Example keys
 
 airflow_admin_users:
-  - name: Erwin
-    username: erwin
-    password: 5urv3yC0rpsFTW
+  - username: molecule-admin
+    password: "MoleculeTestOnly#2024"
     role: Admin
-    firstname: Erwin
-    lastname: Smith
-    email: erwin@attack.com
+    firstname: Molecule
+    lastname: Admin
+    email: molecule-admin@example.invalid
 
 airflow_regular_users:
-  - name: Levi
-    username: levi
-    password: strongerThanU
+  - username: molecule-user
+    password: "MoleculeTestOnly#2024"
     role: Public
-    firstname: Levi
-    lastname: Ackerman
-    email: levi@attack.com
-  - name: Eren
-    username: eren
-    password: 104thGraduated
-    role: Public
-    firstname: Eren
-    lastname: Yeager
-    email: eren@attack.com
+    firstname: Molecule
+    lastname: User
+    email: molecule-user@example.invalid
 
 airflow_required_python_packages:
-  - { name: SQLAlchemy }
-  - { name: psycopg2-binary }
   - { name: pandas }
 
+# `celery`, `postgres` and `fab` are already part of airflow_core_extras
+# (role default) - only list genuinely optional extras here.
 airflow_extra_packages:
-  - celery
   - cgroups
   - ftp
   - http
   - jdbc
   - sftp
   - ssh
+
+# Worker + flower ARE exercised here (unlike the previous
+# SequentialExecutor fixture) since a real broker is available.
+airflow_services:
+  airflow_webserver:
+    service_name: airflow-webserver
+    enabled: true
+    running: true
+    state: started
+    path: airflow-webserver.service.j2
+  airflow_scheduler:
+    service_name: airflow-scheduler
+    enabled: true
+    running: true
+    state: started
+    path: airflow-scheduler.service.j2
+  airflow_triggerer:
+    service_name: airflow-triggerer
+    enabled: true
+    running: true
+    state: started
+    path: airflow-triggerer.service.j2
+  airflow_worker:
+    service_name: airflow-worker
+    enabled: true
+    running: true
+    state: started
+    path: airflow-worker.service.j2
+  airflow_flower:
+    service_name: airflow-flower
+    enabled: true
+    running: true
+    state: started
+    path: airflow-flower.service.j2
+
+airflow_run_db_migrate: true
+airflow_backup_enabled: false
+redis_manage: false
+airflow_monitoring_enabled: false

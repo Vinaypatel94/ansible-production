@@ -1,0 +1,33 @@
+{{ ansible_managed | comment }}
+# StatsD -> Prometheus metric mapping for Apache Airflow.
+# https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/metrics.html
+mappings:
+  - match: "airflow.*job_start"
+    name: "airflow_job_start_count"
+    match_metric_type: counter
+    labels:
+      job_name: "$1"
+  - match: "airflow.*job_end"
+    name: "airflow_job_end_count"
+    match_metric_type: counter
+    labels:
+      job_name: "$1"
+  - match: "airflow.ti_failures"
+    name: "airflow_task_instance_failures_total"
+    match_metric_type: counter
+  - match: "airflow.ti_successes"
+    name: "airflow_task_instance_successes_total"
+    match_metric_type: counter
+  - match: "airflow.operator_failures_*"
+    name: "airflow_operator_failures_total"
+    match_metric_type: counter
+    labels:
+      operator: "$1"
+  - match: "airflow.dag_processing.*"
+    name: "airflow_dag_processing"
+    labels:
+      metric: "$1"
+  - match: "airflow.*"
+    name: "airflow_generic"
+    labels:
+      metric: "$1"

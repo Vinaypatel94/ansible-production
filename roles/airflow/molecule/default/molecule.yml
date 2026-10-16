@@ -10,6 +10,23 @@ lint: |
   ansible-lint .
 
 platforms:
+  # Real PostgreSQL + Redis containers (not systemd, not part of
+  # airflow_group) so the role is tested against the same CeleryExecutor
+  # + PostgreSQL topology used in production, instead of a SequentialExecutor
+  # + sqlite stand-in.
+  - name: postgres
+    image: docker.io/library/postgres:16
+    privileged: false
+    env:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: molecule-test-only-not-real
+      POSTGRES_DB: airflow
+
+  - name: redis
+    image: docker.io/library/redis:7.2-alpine
+    privileged: false
+    command: redis-server --requirepass molecule-test-only-not-real
+
   - name: airflow
     groups:
       - airflow_group
@@ -39,6 +56,9 @@ platforms:
       - 0.0.0.0:8081:8081/tcp
       - 0.0.0.0:5000:5000/tcp
       - 0.0.0.0:5555:5555/tcp
+    links:
+      - postgres
+      - redis
 
 provisioner:
   name: ansible

@@ -1,3 +1,47 @@
-airflow_webserver_enabled: false
-airflow_scheduler_enabled: false
-airflow_worker_enabled: true
+---
+# Vars for the airflow_workers group: runs only the Celery worker.
+
+airflow_services:
+  airflow_webserver:
+    service_name: airflow-webserver
+    enabled: false
+    running: false
+    state: stopped
+    path: airflow-webserver.service.j2
+  airflow_scheduler:
+    service_name: airflow-scheduler
+    enabled: false
+    running: false
+    state: stopped
+    path: airflow-scheduler.service.j2
+  airflow_triggerer:
+    service_name: airflow-triggerer
+    enabled: false
+    running: false
+    state: stopped
+    path: airflow-triggerer.service.j2
+  airflow_worker:
+    service_name: airflow-worker
+    enabled: true
+    running: true
+    state: started
+    path: airflow-worker.service.j2
+  airflow_flower:
+    service_name: airflow-flower
+    enabled: false
+    running: false
+    state: stopped
+    path: airflow-flower.service.j2
+
+# Workers do not run a local broker; they connect to the broker on the
+# master node (or a managed broker, if you've repointed
+# airflow_celery_broker_url at e.g. AWS ElastiCache).
+redis_manage: false
+
+# Only the master runs schema migrations; workers must not race it.
+airflow_run_db_migrate: false
+
+# Point the Celery broker URL at the master node's broker instead of
+# 127.0.0.1 (the role default, correct only when webserver/scheduler and
+# the worker are on the same host).
+airflow_celery_broker_url: "redis://:{{ redis_password }}@{{ hostvars[groups['airflow_master'][0]]['ansible_host'] }}:6379/0"

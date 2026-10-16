@@ -1,42 +1,54 @@
 ---
 # handlers file for airflow-role
 
-- name: restart airflow-webserver
-  systemd:
+- name: Restart airflow-webserver
+  ansible.builtin.systemd_service:
     name: airflow-webserver
     state: restarted
+    daemon_reload: true
   when: >-
-   airflow_services['airflow_webserver']
-   and airflow_services['airflow_webserver']['enabled']
+    airflow_services['airflow_webserver']
+    and airflow_services['airflow_webserver']['enabled']
 
-- name: restart airflow-scheduler
-  systemd:
+- name: Restart airflow-scheduler
+  ansible.builtin.systemd_service:
     name: airflow-scheduler
     state: restarted
+    daemon_reload: true
   when: >-
-   airflow_services['airflow_scheduler']
-   and airflow_services['airflow_scheduler']['enabled']
+    airflow_services['airflow_scheduler']
+    and airflow_services['airflow_scheduler']['enabled']
 
-- name: restart airflow-worker
-  systemd:
-    name: airflow-worker
-    state: restarted
-  when: >-
-   airflow_services['airflow_worker']
-   and airflow_services['airflow_worker']['enabled']
-
-- name: restart airflow-triggerer
-  systemd:
+- name: Restart airflow-triggerer
+  ansible.builtin.systemd_service:
     name: airflow-triggerer
     state: restarted
+    daemon_reload: true
   when: >-
-   airflow_services['airflow_triggerer']
-   and airflow_services['airflow_triggerer']['enabled']
+    airflow_services['airflow_triggerer']
+    and airflow_services['airflow_triggerer']['enabled']
 
-- name: restart airflow-flower
-  systemd:
+- name: Restart airflow-worker
+  ansible.builtin.systemd_service:
+    name: airflow-worker
+    state: restarted
+    daemon_reload: true
+  when: >-
+    airflow_services['airflow_worker']
+    and airflow_services['airflow_worker']['enabled']
+
+- name: Restart airflow-flower
+  ansible.builtin.systemd_service:
     name: airflow-flower
     state: restarted
+    daemon_reload: true
   when: >-
-   airflow_services['airflow_flower']
-   and airflow_services['airflow_flower']['enabled']
+    airflow_services['airflow_flower']
+    and airflow_services['airflow_flower']['enabled']
+
+- name: Restart statsd-exporter
+  ansible.builtin.systemd_service:
+    name: statsd-exporter
+    state: restarted
+    daemon_reload: true
+  when: airflow_monitoring_enabled | default(true)

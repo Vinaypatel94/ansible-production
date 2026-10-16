@@ -1,16 +1,33 @@
 ---
-
-- name: Airflow | Check users
+- name: Airflow | Check existing users
+  ansible.builtin.command:
+    argv:
+      - "{{ airflow_executable }}"
+      - users
+      - list
   become: true
   become_user: "{{ airflow_user }}"
-  ansible.builtin.command: "{{ airflow_executable }} users list"
   register: airflow_check_users
   changed_when: false
   no_log: true
+  when: (airflow_admin_users + airflow_regular_users) | length > 0
 
-- name: Airflow | Create Admin users
-  become: true
-  become_user: "{{ airflow_user }}"
+- name: Airflow | Fail fast if admin users are declared without credentials
+  ansible.builtin.assert:
+    that:
+      - item.username is defined and item.username | length > 0
+      - item.password is defined and item.password | length >= 12
+      - item.email is defined and item.email | length > 0
+    fail_msg: >-
+      airflow_admin_users entries must define username, email, and a
+      password of at least 12 characters (use Ansible Vault - see
+      group_vars/airflow/vault.yml.example). Refusing to create an
+      incomplete/empty admin account.
+    quiet: true
+  loop: "{{ airflow_admin_users }}"
+  no_log: true
+
+- name: Airflow | Create admin users
   ansible.builtin.command:
     argv:
       - "{{ airflow_executable }}"
@@ -21,22 +38,22 @@
       - --password
       - "{{ item.password }}"
       - --firstname
-      - "{{ item.firstname }}"
+      - "{{ item.firstname | default('Admin') }}"
       - --lastname
-      - "{{ item.lastname }}"
+      - "{{ item.lastname | default('User') }}"
       - --role
-      - "{{ item.role }}"
+      - "{{ item.role | default('Admin') }}"
       - --email
       - "{{ item.email }}"
+  become: true
+  become_user: "{{ airflow_user }}"
   no_log: true
-  with_items: "{{ airflow_admin_users }}"
-  when:
-    - "item.email not in airflow_check_users.stdout"
+  loop: "{{ airflow_admin_users }}"
+  when: "item.email not in airflow_check_users.stdout"
   register: airflow_created_admin_users
+  changed_when: true
 
 - name: Airflow | Create regular users
-  become: true
-  become_user: "{{ airflow_user }}"
   ansible.builtin.command:
     argv:
       - "{{ airflow_executable }}"
@@ -47,15 +64,16 @@
       - --password
       - "{{ item.password }}"
       - --firstname
-      - "{{ item.firstname }}"
+      - "{{ item.firstname | default('') }}"
       - --lastname
-      - "{{ item.lastname }}"
+      - "{{ item.lastname | default('') }}"
       - --role
-      - "{{ item.role }}"
+      - "{{ item.role | default('Public') }}"
       - --email
       - "{{ item.email }}"
+  become: true
+  become_user: "{{ airflow_user }}"
   no_log: true
-  with_items: "{{ airflow_regular_users }}"
-  when:
-    - airflow_regular_users is defined
-    - "item.email not in airflow_check_users.stdout"
+  loop: "{{ airflow_regular_users }}"
+  when: "airflow_regular_users | length > 0 and item.email not in airflow_check_users.stdout"
+  changed_when: true

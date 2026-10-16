@@ -1,5 +1,11 @@
 ---
 
+- name: Airflow | Preflight validation
+  ansible.builtin.import_tasks: preflight.yml
+  tags:
+    - always
+    - validate
+
 - name: Airflow | Install
   ansible.builtin.import_tasks: install.yml
   tags:
@@ -23,3 +29,15 @@
   tags:
     - service
     - airflow_service
+
+- name: Airflow | Monitoring
+  ansible.builtin.import_tasks: monitoring.yml
+  tags:
+    - monitoring
+    - airflow_monitoring
+
+- name: Airflow | Backups
+  ansible.builtin.import_tasks: backup.yml
+  tags:
+    - backup
+    - airflow_backup

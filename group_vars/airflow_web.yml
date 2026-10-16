@@ -1,3 +1,0 @@
-airflow_webserver_enabled: true
-airflow_scheduler_enabled: false
-airflow_worker_enabled: false

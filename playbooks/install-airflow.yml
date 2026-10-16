@@ -1,12 +1,36 @@
-# - name: Install and configure Airflow
-#   hosts: all
-#   become: yes
-#   roles:
-#     - airflow
-
-
-- name: Install and configure Apache Airflow
+---
+- name: Install and configure Apache Airflow (CeleryExecutor cluster)
   hosts: airflow
   become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Pre-flight | Assert control-node Ansible version
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full is version('2.16.0', '>=')
+        fail_msg: >-
+          This playbook requires ansible-core >= 2.16 on the control node
+          (detected {{ ansible_version.full }}). See README.md "Version
+          matrix".
+        quiet: true
+      delegate_to: localhost
+      run_once: true
+      tags: always
+
+    - name: Pre-flight | Assert required collections are installed
+      ansible.builtin.command:
+        argv:
+          - ansible-galaxy
+          - collection
+          - list
+          - community.general
+      delegate_to: localhost
+      run_once: true
+      changed_when: false
+      register: airflow_collections_check
+      failed_when: "'community.general' not in airflow_collections_check.stdout"
+      tags: always
+
   roles:
-    - airflow
+    - role: airflow

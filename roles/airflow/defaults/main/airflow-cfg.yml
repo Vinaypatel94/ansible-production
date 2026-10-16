@@ -1,23 +1,70 @@
 ---
 
 airflow_webserver_port: 8080
+
+# IMPORTANT: do not set `airflow_cfg` directly in group_vars/host_vars - it
+# will replace this merge entirely (this was the root cause of a previous
+# bug that produced duplicate [core] sections and silently dropped
+# defaults). Instead set `airflow_cfg_base` (and optionally
+# `airflow_cfg_extra`) with ONLY the sections/keys you need to add or
+# override; `community.general.lists_mergeby` merges them with the
+# defaults below by `section`, recursively merging the `settings` dict so
+# individual keys override cleanly without duplicating sections.
 airflow_cfg: "{{ [airflow_cfg_default, airflow_cfg_base | default([]), airflow_cfg_extra | default([])] | community.general.lists_mergeby('section', recursive=true) }}"
 
 # AIRFLOW CONFIGURATION https://airflow.apache.org/docs/apache-airflow/stable/configurations-ref.html
 airflow_cfg_default:
   - section: core
     settings:
-      dags_folder: "{{ airflow_app_home }}/dags"
-      dags_are_paused_at_creation: True
-      load_examples: False
-      load_default_connections: False
-      plugins_folder: "{{ airflow_app_home }}/plugins"
+      dags_folder: "{{ airflow_dags_folder }}"
+      plugins_folder: "{{ airflow_plugins_folder }}"
+      executor: "{{ airflow_executor | default('CeleryExecutor') }}"
+      fernet_key: "{{ airflow_fernet_key }}"
+      dags_are_paused_at_creation: "True"
+      load_examples: "False"
+      load_default_connections: "False"
+      default_timezone: "utc"
+
+  - section: database
+    settings:
+      sql_alchemy_conn: "{{ airflow_sql_alchemy_conn }}"
+
   - section: logging
     settings:
       base_log_folder: "{{ airflow_logs_folder }}"
       dag_processor_manager_log_location: "{{ airflow_logs_folder }}/dag_processor_manager/dag_processor_manager.log"
+      remote_logging: "False"
+
   - section: webserver
     settings:
+      web_server_host: "{{ airflow_webserver_host }}"
+      web_server_port: "{{ airflow_webserver_port }}"
       base_url: "http://localhost:{{ airflow_webserver_port }}"
+      secret_key: "{{ airflow_web_secret_key }}"
       access_logfile: "{{ airflow_logs_folder }}/gunicorn-access.log"
       error_logfile: "{{ airflow_logs_folder }}/gunicorn-error.log"
+      cookie_secure: "{{ airflow_webserver_cookie_secure | default('True') }}"
+      expose_config: "False"
+      expose_hostname: "False"
+      expose_stacktrace: "False"
+
+  - section: celery
+    settings:
+      broker_url: "{{ airflow_celery_broker_url }}"
+      result_backend: "{{ airflow_celery_result_backend }}"
+      worker_concurrency: "{{ airflow_celery_worker_concurrency }}"
+
+  - section: metrics
+    settings:
+      statsd_on: "{{ airflow_metrics_statsd_on }}"
+      statsd_host: "{{ airflow_metrics_statsd_host }}"
+      statsd_port: "{{ airflow_metrics_statsd_port }}"
+      statsd_prefix: "{{ airflow_metrics_statsd_prefix }}"
+
+  - section: scheduler
+    settings:
+      catchup_by_default: "False"
+
+  - section: api
+    settings:
+      auth_backends: "airflow.api.auth.backend.session"

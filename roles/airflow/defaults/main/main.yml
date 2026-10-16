@@ -1,150 +1,105 @@
 ---
 # [General]
 airflow_app_name: airflow
-airflow_version:  2.10.5
+
+# Pinned, verified-compatible stack (see project README.md "Version matrix"):
+#   Apache Airflow 2.10.5 + Python 3.12 + PostgreSQL 16 + Redis 7.x
+#   Verified against the upstream constraints file:
+#   https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.12.txt
+airflow_version: 2.10.5
 airflow_package: apache-airflow
 
 # Owner
 airflow_user: airflow
 airflow_group: airflow
 airflow_shell: /usr/sbin/nologin
-airflow_createhome: yes
+airflow_createhome: true
 
-# The default python version, if you want other version you should make sure it is
-# installed before
-airflow_python_version: 3
+# The Python version used to build the Airflow virtualenv. Must match one of
+# the versions Airflow officially tests against for the pinned
+# airflow_version (see docs: installation/prerequisites.html). 3.12 is the
+# default Python 3 on Ubuntu 24.04 LTS.
+airflow_python_version: "3.12"
 
 # Airflow url to download the correct version
 airflow_constraint_url: "https://raw.githubusercontent.com/apache/airflow/constraints-{{ airflow_version }}/constraints-{{ airflow_python_version }}.txt"
+
+# Extras installed with the core `apache-airflow` package. `fab` is required
+# in Airflow >= 2.9 to keep the classic webserver_config.py / AUTH_DB / LDAP
+# authentication backend that this role configures. `celery` and `postgres`
+# are required for the CeleryExecutor + PostgreSQL metadata DB used here.
+airflow_core_extras:
+  - celery
+  - postgres
+  - fab
+
+# Scheduling executor. CeleryExecutor is the only executor this role's
+# service set (webserver/scheduler/triggerer/worker/flower) is designed
+# for; LocalExecutor/SequentialExecutor would need the worker/flower
+# services disabled via group_vars.
+airflow_executor: CeleryExecutor
 
 # Available extra packages:
 # https://airflow.apache.org/docs/apache-airflow/stable/extra-packages-ref.html
 # List should follow Ansible's YAML basics:
 # https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html#yaml-basics
 airflow_bundle_package:  # all|all_dbs|devel|devel_hadoop|devel_all|devel_ci See bundle extras section
-# airflow_extra_packages:
-  # [Apache]
-  # - apache.atlas
-  # - apache.beam
-  # - apache.cassandra
-  # - apache.druid
-  # - apache.hdfs
-  # - apache.hive
-  # - apache.kylin
-  # - apache.livy
-  # - apache.pig
-  # - apache.pinot
-  # - apache.spark
-  # - apache.sqoop
-  # - apache.webhdfs
-  # [Services]
-  # - amazon
-  # - microsoft.azure
-  # - cloudant
-  # - databricks
-  # - datadog
-  # - dask
-  # - dingding
-  # - discord
-  # - facebook
-  # - google
-  # - github_enterprise
-  # - google_auth
-  # - hashicorp
-  # - jira
-  # - opsgenie
-  # - pagerduty
-  # - plexus
-  # - qubole
-  # - salesforce
-  # - sendgrid
-  # - segment
-  # - sentry
-  # - slack
-  # - snowflake
-  # - telegram
-  # - vertica
-  # - yandex
-  # - zendesk
-  # [Software]
-  # - async
-  # - celery
-  # - cncf.kubernetes
-  # - docker
-  # - elasticsearch
-  # - exasol
-  # - jenkins
-  # - ldap
-  # - mongo
-  # - microsoft.mssql
-  # - mysql
-  # - odbc
-  # - openfaas
-  # - oracle
-  # - postgres
-  # - password
-  # - presto
-  # - rabbitmq
+airflow_extra_packages: []
+  # Example:
   # - redis
-  # - samba
-  # - singularity
-  # - statsd
-  # - tableau
-  # - virtualenv
-  # [Others]
-  # - cgroups
-  # - ftp
-  # - grpc
-  # - http
-  # - imap
-  # - jdbc
-  # - kerberos
-  # - papermill
-  # - sftp
-  # - sqlite
   # - ssh
-  # - microsoft.winrm
+  # - http
 
 airflow_default_required_libs:
   - python3-dev
   - python3-pip
-  - python3-setuptools
-  - python3-virtualenv
+  - python3-venv
+  - build-essential
+  - libpq-dev
 
 airflow_additional_required_libs: []
 
 airflow_required_libs: "{{ airflow_default_required_libs + airflow_additional_required_libs }}"
 
-# Maybe not necessary but recommended by us :)
-airflow_required_python_packages:
-  - { name: SQLAlchemy }
-  - { name: psycopg2-binary }
-  - { name: pandas }
+# Extra Python packages installed *inside* the Airflow virtualenv, after
+# Airflow itself, using the SAME constraints file so versions can't drift
+# from what Airflow's own dependency set expects. Only add packages here
+# that are not already covered by Airflow's extras.
+airflow_required_python_packages: []
+  # Example:
+  # - { name: pandas }
 
-# Admin user
-airflow_admin_users:
-  - name:
-    username:
-    password:
-    role:
-    firstname:
-    lastname:
-    email:
-
-# Admin user
-# airflow_regular_users:
-#   - name:
-#     username:
-#     password:
-#     role:
-#     firstname:
-#     lastname:
-#     email:
+# Admin user(s) created via `airflow users create`. Intentionally defaults
+# to an empty list: real credentials must come from Ansible Vault
+# (group_vars/airflow/vault.yml), never committed in plaintext. Expected
+# shape:
+# airflow_admin_users:
+#   - username: admin
+#     password: "{{ vault_airflow_admin_password }}"
+#     role: Admin
+#     firstname: Admin
+#     lastname: User
+#     email: admin@example.com
+airflow_admin_users: []
+airflow_regular_users: []
 
 # Service options
 # airflow_scheduler_runs: 1000
-airflow_private_tmp: false
+airflow_private_tmp: true
 
+# `airflow db migrate` must run from exactly one node per cluster to avoid
+# concurrent Alembic migrations racing against each other. Default true so
+# single-node/dev usage "just works"; the multi-node production inventory
+# in this project explicitly sets this to false on worker hosts (see
+# group_vars/airflow_workers.yml) and leaves it true only on the
+# designated primary node in group_vars/airflow_master.yml.
+airflow_run_db_migrate: true
+
+# Full service topology. All five Airflow processes are modeled; which ones
+# actually run on a given host is controlled by group_vars (see
+# group_vars/airflow_master.yml and group_vars/airflow_workers.yml) which
+# override only the `enabled`/`running` flags per host group - the
+# service_name/path keys should not be overridden.
 airflow_services:
   airflow_webserver:
     service_name: airflow-webserver
@@ -158,6 +113,12 @@ airflow_services:
     running: true
     state: started
     path: airflow-scheduler.service.j2
+  airflow_triggerer:
+    service_name: airflow-triggerer
+    enabled: true
+    running: true
+    state: started
+    path: airflow-triggerer.service.j2
   airflow_worker:
     service_name: airflow-worker
     enabled: false
@@ -171,18 +132,29 @@ airflow_services:
     state: started
     path: airflow-flower.service.j2
 
+# Precomputed list of "restart <service-name>" handler names for every
+# configured service, used by tasks that should trigger a restart of
+# whichever Airflow services are enabled on the current host. Centralized
+# here instead of repeating the product/join expression in every task.
+airflow_restart_notify_handlers: >-
+  {{ ['Restart'] | product(airflow_services.values() | map(attribute='service_name')) | map('join', ' ') | list }}
+
 # Files & Paths
 airflow_executable: "{{ airflow_app_home }}/bin/airflow"
-airflow_pip_executable: "pip3"
+airflow_pip_executable: "{{ airflow_app_home }}/bin/pip3"
 airflow_user_home: "/var/lib/{{ airflow_user }}"
 airflow_app_home: "/opt/{{ airflow_app_name }}"
 airflow_conf_path: "/etc/{{ airflow_app_name }}"
 airflow_pidfile_folder: "/run/{{ airflow_app_name }}"
 airflow_environment_file_folder: /etc/sysconfig
 airflow_environment_extra_vars: []
-airflow_health_url: "http://{{ airflow_webserver_host }}:{{ airflow_webserver_port }}/health"
+airflow_webserver_host: "0.0.0.0"
+airflow_health_url: "http://127.0.0.1:{{ airflow_webserver_port }}/health"
 airflow_dags_folder: "{{ airflow_app_home }}/dags"
-airflow_logs_folder: /var/log/airflow
+# Single source of truth for the log directory. `logging.base_log_folder`
+# in airflow-cfg.yml MUST derive from this same variable (it previously
+# drifted from a hardcoded /var/log/airflow path - fixed).
+airflow_logs_folder: "{{ airflow_app_home }}/logs"
 airflow_child_process_log_folder: "{{ airflow_logs_folder }}/scheduler"
 airflow_plugins_folder: "{{ airflow_app_home }}/plugins"
 airflow_skeleton_paths:
@@ -193,6 +165,7 @@ airflow_skeleton_paths:
   - "{{ airflow_child_process_log_folder }}"
   - "{{ airflow_environment_file_folder }}"
   - "{{ airflow_plugins_folder }}"
+  - "{{ airflow_backup_dir }}"
 
 # Allowing playbooks to provide external config files&templates
 airflow_extra_conf_path: "{{ playbook_dir }}/files/airflow"
@@ -204,3 +177,46 @@ airflow_config_template_path: airflow.cfg.j2
 # list of items following the structure provided in the example comment
 # dags_dependencies:
 #   - {name: pip_package, version: version_needed}
+dags_dependencies: []
+
+# ---------------------------------------------------------------------------
+# Celery / broker
+# ---------------------------------------------------------------------------
+# Only meaningful when airflow_executor == CeleryExecutor. Point at a local
+# Redis (installed by the `redis` role on the same host, see
+# group_vars/airflow_master.yml) for small deployments, or at a managed
+# broker (e.g. AWS ElastiCache / Amazon MQ) for production AWS deployments -
+# just change these two URLs, nothing else needs to change.
+airflow_celery_broker_url: "redis://:{{ vault_redis_password | default('') }}@127.0.0.1:6379/0"
+airflow_celery_result_backend: "db+{{ airflow_sql_alchemy_conn }}"
+airflow_celery_worker_concurrency: 8
+
+# ---------------------------------------------------------------------------
+# Monitoring (StatsD metrics - compatible with Prometheus via statsd_exporter)
+# ---------------------------------------------------------------------------
+airflow_metrics_statsd_on: true
+airflow_metrics_statsd_host: "127.0.0.1"
+# 9125 matches statsd_exporter's default --statsd.listen-udp address
+# (deployed by roles/airflow/tasks/monitoring.yml). Its /metrics endpoint
+# for Prometheus scraping is exposed on airflow_statsd_exporter_web_port.
+airflow_metrics_statsd_port: 9125
+airflow_metrics_statsd_prefix: "airflow"
+
+airflow_monitoring_enabled: true
+airflow_statsd_exporter_version: "0.31.0"
+airflow_statsd_exporter_checksum: "sha256:5ecc9ef3f2ff3b0dc6e4b7f67a147b414ab2c296c5ec60f91424979b45e9a614"
+airflow_statsd_exporter_web_port: 9102
+airflow_statsd_exporter_user: statsd-exporter
+
+# ---------------------------------------------------------------------------
+# Backups
+# ---------------------------------------------------------------------------
+airflow_backup_enabled: false
+airflow_backup_dir: "/var/backups/airflow"
+airflow_backup_retention_days: 14
+# When set, the backup script will additionally upload the dump to this S3
+# URI (requires the AWS CLI + instance IAM role with s3:PutObject on the
+# target bucket/prefix). Left empty by default - local-only backups.
+airflow_backup_s3_uri: ""
+airflow_backup_cron_hour: "2"
+airflow_backup_cron_minute: "30"

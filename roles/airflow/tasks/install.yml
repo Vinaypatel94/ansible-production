@@ -1,5 +1,4 @@
 ---
-
 - name: Airflow | Ensure Airflow group
   ansible.builtin.group:
     name: "{{ airflow_group }}"
@@ -11,7 +10,7 @@
     group: "{{ airflow_group }}"
     system: true
     shell: "{{ airflow_shell }}"
-    createhome: "{{ airflow_createhome }}"
+    create_home: "{{ airflow_createhome }}"
     home: "{{ airflow_user_home }}"
   become: true
 
@@ -21,69 +20,106 @@
     owner: "{{ airflow_user }}"
     group: "{{ airflow_group }}"
     state: directory
-  with_items: "{{ airflow_skeleton_paths }}"
+    mode: "0750"
+  loop: "{{ airflow_skeleton_paths }}"
 
 - name: Airflow | Copy profile.d file
   ansible.builtin.template:
     src: airflow-profile.d-file.j2
-    dest: "/etc/profile.d/airflow.sh"
-    mode: 0644
+    dest: /etc/profile.d/airflow.sh
+    owner: root
+    group: root
+    mode: "0644"
 
-- name: Airflow | Installing dependencies
+- name: Airflow | Installing OS dependencies
   ansible.builtin.apt:
     pkg: "{{ airflow_required_libs }}"
     state: present
     update_cache: true
+    cache_valid_time: 3600
 
-- name: Airflow | Installing Python pip dependencies
+- name: Airflow | Ensure the exact requested Python interpreter + venv module are installed
+  ansible.builtin.apt:
+    pkg:
+      - "python{{ airflow_python_version }}"
+      - "python{{ airflow_python_version }}-venv"
+    state: present
+  # On Ubuntu 24.04 this is a no-op (python3.12 is the base system Python
+  # already covered by airflow_required_libs); kept explicit so this role
+  # also works unmodified on older hosts (e.g. Ubuntu 22.04) where the
+  # requested interpreter must be installed from a PPA/deadsnakes first.
+  register: airflow_python_pkg
+  failed_when:
+    - airflow_python_pkg is failed
+    - "'Unable to locate package' not in (airflow_python_pkg.msg | default(''))"
+
+- name: Airflow | Ensure Airflow virtualenv exists (idempotent, created once)
+  ansible.builtin.command:
+    argv:
+      - "python{{ airflow_python_version }}"
+      - -m
+      - venv
+      - "{{ airflow_app_home }}"
+  args:
+    creates: "{{ airflow_app_home }}/bin/python"
   become: true
   become_user: "{{ airflow_user }}"
+
+- name: Airflow | Upgrade pip/setuptools/wheel inside the virtualenv
   ansible.builtin.pip:
-    name: "{{ item.name }}"
-    version: "{{ item.version | default(omit) }}"
+    name:
+      - pip
+      - setuptools
+      - wheel
+    state: latest  # noqa: package-latest - intentional: bootstrap tooling only, not pinned app deps
     virtualenv: "{{ airflow_app_home }}"
-    virtualenv_python: "python{{ airflow_python_version | default(omit) }}"
-  with_items: "{{ airflow_required_python_packages }}"
-  when: airflow_required_python_packages is defined
-
-- name: Airflow | Installing Airflow
   become: true
   become_user: "{{ airflow_user }}"
+
+- name: Airflow | Installing Airflow with pinned extras and constraints
   ansible.builtin.pip:
-    name: "{{ airflow_package }}[{{ airflow_bundle_package | default(omit) }}]"
-    version: "{{ airflow_version }}"
+    name: "{{ airflow_package }}[{{ airflow_core_extras | join(',') }}]=={{ airflow_version }}"
     state: present
     virtualenv: "{{ airflow_app_home }}"
-    virtualenv_python: "python{{ airflow_python_version | default(omit) }}"
-    extra_args: --no-cache-dir
+    extra_args: "--constraint {{ airflow_constraint_url }} --no-cache-dir"
   register: airflow_install
+  become: true
+  become_user: "{{ airflow_user }}"
   environment:
     SLUGIFY_USES_TEXT_UNIDECODE: "yes"
 
-- name: Airflow | Installing Airflow Extra Packages
+- name: Airflow | Installing optional Airflow provider/bundle extras
+  ansible.builtin.pip:
+    name: "{{ airflow_package }}[{{ airflow_extra_packages | join(',') }}]=={{ airflow_version }}"
+    virtualenv: "{{ airflow_app_home }}"
+    extra_args: "--constraint {{ airflow_constraint_url }} --no-cache-dir"
+    state: present
   become: true
   become_user: "{{ airflow_user }}"
-  ansible.builtin.pip:
-    name: "apache-airflow[{{ airflow_extra_packages | join(', ') }}]"
-    version: "{{ airflow_version }}"
-    virtualenv: "{{ airflow_app_home }}"
-    virtualenv_python: "python{{ airflow_python_version | default(omit) }}"
-    state: present
   when:
-    - airflow_extra_packages is defined
+    - airflow_extra_packages | length > 0
     - not airflow_bundle_package
+  notify: "{{ airflow_restart_notify_handlers }}"
+
+- name: Airflow | Installing additional required Python packages (constrained)
+  ansible.builtin.pip:
+    name: "{{ item.name }}{{ ('==' + item.version) if item.version is defined else '' }}"
+    virtualenv: "{{ airflow_app_home }}"
+    extra_args: "--constraint {{ airflow_constraint_url }}"
+    state: present
+  loop: "{{ airflow_required_python_packages }}"
+  become: true
+  become_user: "{{ airflow_user }}"
+  when: airflow_required_python_packages | length > 0
 
 - name: Airflow | Installing DAGs dependencies
-  become: true
-  become_user: "{{ airflow_user }}"
   ansible.builtin.pip:
-    name: "{{ item.name }}"
-    version: "{{ item.version | default(omit) }}"
+    name: "{{ item.name }}{{ ('==' + item.version) if item.version is defined else '' }}"
     virtualenv: "{{ airflow_app_home }}"
-    virtualenv_python: "python{{ airflow_python_version | default(omit) }}"
     extra_args: "{{ item.extra_args | default(omit) }}"
     state: present
-  with_items: "{{ dags_dependencies }}"
-  when: dags_dependencies is defined
-  notify:
-    "{{ ['restart'] | product(airflow_services.values() | map(attribute='service_name')) | map('join', ' ') | list }}"
+  loop: "{{ dags_dependencies }}"
+  become: true
+  become_user: "{{ airflow_user }}"
+  when: dags_dependencies | length > 0
+  notify: "{{ airflow_restart_notify_handlers }}"

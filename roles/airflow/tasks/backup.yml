@@ -1,0 +1,85 @@
+---
+# Opt-in (airflow_backup_enabled: false by default) pg_dump backup of the
+# Airflow metadata database. If you use AWS RDS, prefer RDS automated
+# snapshots as the primary backup mechanism and treat this as a secondary/
+# portable copy, or disable it entirely.
+
+- name: Backup | Assert discrete DB connection vars are set
+  ansible.builtin.assert:
+    that:
+      - airflow_db_host is defined and airflow_db_host | length > 0
+      - airflow_db_name is defined and airflow_db_name | length > 0
+      - airflow_db_user is defined and airflow_db_user | length > 0
+      - airflow_db_password is defined and airflow_db_password | length > 0
+    fail_msg: >-
+      airflow_backup_enabled is true but airflow_db_host/db_name/db_user/
+      db_password are not fully set. These are required (separately from
+      airflow_sql_alchemy_conn) so the backup script can call pg_dump
+      without parsing a connection URI in shell.
+    quiet: true
+  no_log: true
+  when: airflow_backup_enabled
+
+- name: Backup | Ensure PostgreSQL client (pg_dump) is installed
+  ansible.builtin.apt:
+    name: postgresql-client
+    state: present
+  when: airflow_backup_enabled
+
+- name: Backup | Ensure backup directory exists
+  ansible.builtin.file:
+    path: "{{ airflow_backup_dir }}"
+    state: directory
+    owner: "{{ airflow_user }}"
+    group: "{{ airflow_group }}"
+    mode: "0750"
+  when: airflow_backup_enabled
+
+- name: Backup | Deploy backup script
+  ansible.builtin.template:
+    src: airflow-db-backup.sh.j2
+    dest: /usr/local/bin/airflow-db-backup.sh
+    owner: root
+    group: "{{ airflow_group }}"
+    mode: "0750"
+  when: airflow_backup_enabled
+  no_log: true
+
+- name: Backup | Schedule nightly cron job
+  ansible.builtin.cron:
+    name: "airflow metadata DB backup"
+    user: "{{ airflow_user }}"
+    minute: "{{ airflow_backup_cron_minute }}"
+    hour: "{{ airflow_backup_cron_hour }}"
+    job: "/usr/local/bin/airflow-db-backup.sh >> {{ airflow_logs_folder }}/db-backup.log 2>&1"
+  when: airflow_backup_enabled
+
+- name: Backup | Remove cron job and script when backups are disabled
+  when: not airflow_backup_enabled
+  block:
+    - name: Backup | Remove cron job
+      ansible.builtin.cron:
+        name: "airflow metadata DB backup"
+        user: "{{ airflow_user }}"
+        state: absent
+    - name: Backup | Remove backup script
+      ansible.builtin.file:
+        path: /usr/local/bin/airflow-db-backup.sh
+        state: absent
+
+- name: Backup | Add logrotate rule for backup log
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/airflow-db-backup
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ airflow_logs_folder }}/db-backup.log {
+          weekly
+          missingok
+          rotate 8
+          compress
+          notifempty
+          create 0640 {{ airflow_user }} {{ airflow_group }}
+      }
+  when: airflow_backup_enabled
