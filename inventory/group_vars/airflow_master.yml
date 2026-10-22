@@ -33,6 +33,12 @@ airflow_services:
     running: false
     state: stopped
     path: airflow-flower.service.j2
+  
+airflow_cfg_base:
+- section: webserver
+  settings:
+    base_url: "http://13.201.59.210:8080"
+    cookie_secure: "False"
 
 # Self-hosted Redis broker lives on this node (private interface only -
 # see roles/redis/defaults/main.yml redis_bind_address). For AWS, set this

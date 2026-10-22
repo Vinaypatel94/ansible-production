@@ -20,6 +20,7 @@
 
 - name: Airflow | Users
   ansible.builtin.import_tasks: users.yml
+  when: airflow_run_db_migrate | default(false)
   tags:
     - users
     - airflow_users

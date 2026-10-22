@@ -32,6 +32,7 @@ airflow_core_extras:
   - celery
   - postgres
   - fab
+  - statsd
 
 # Scheduling executor. CeleryExecutor is the only executor this role's
 # service set (webserver/scheduler/triggerer/worker/flower) is designed

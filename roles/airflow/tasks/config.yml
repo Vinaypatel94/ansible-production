@@ -165,3 +165,27 @@
   tags:
     - airflow-extra-vars-file
     - airflow-extra-conn-file
+
+- name: Airflow | Deploy DAG files
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../dags/"
+    dest: "{{ airflow_dags_folder }}/"
+    owner: "{{ airflow_user }}"
+    group: "{{ airflow_group }}"
+    mode: "0640"
+    directory_mode: "0750"
+  tags:
+    - airflow-dags
+
+- name: Airflow | Synchronize DAG directory
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../dags/"
+    dest: "{{ airflow_dags_folder }}/"
+    archive: true
+    delete: true
+    rsync_path: "sudo rsync"
+    rsync_opts:
+      - "--chown={{ airflow_user }}:{{ airflow_group }}"
+      - "--exclude=__pycache__/"
+  tags:
+    - airflow-dags

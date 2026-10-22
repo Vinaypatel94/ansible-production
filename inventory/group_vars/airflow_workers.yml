@@ -44,4 +44,6 @@ airflow_run_db_migrate: false
 # Point the Celery broker URL at the master node's broker instead of
 # 127.0.0.1 (the role default, correct only when webserver/scheduler and
 # the worker are on the same host).
-airflow_celery_broker_url: "redis://:{{ redis_password }}@{{ hostvars[groups['airflow_master'][0]]['ansible_host'] }}:6379/0"
+# airflow_celery_broker_url: "redis://:{{ redis_password }}@{{ hostvars[groups['airflow_master'][0]]['ansible_host'] }}:6379/0"
+airflow_celery_broker_url: >-
+  redis://:{{ redis_password }}@10.20.1.72:6379/0

@@ -15,7 +15,7 @@
         timeout: 60
 
   roles:
-    - role: idealista.airflow_role
+    - role: airflow
 
   environment:
     AIRFLOW_HOME: "{{ airflow_app_home }}"

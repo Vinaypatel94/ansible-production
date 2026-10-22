@@ -11,7 +11,7 @@
 # pg_dump directly without parsing a connection string in shell, and so
 # the URI below can't drift from what's actually used for backups.
 # For AWS, point airflow_db_host at your RDS endpoint.
-airflow_db_host: "CHANGE_ME.rds.amazonaws.com"
+airflow_db_host: "airflow-db.cnuyque8atd1.ap-south-1.rds.amazonaws.com"
 airflow_db_port: 5432
 airflow_db_name: airflow
 airflow_db_user: airflow
@@ -61,3 +61,6 @@ airflow_backup_enabled: false
 
 # --- Extra operator packages installed on top of [celery,postgres,fab] ---
 airflow_extra_packages: []
+
+airflow_monitoring_enabled: false
+airflow_metrics_statsd_on: false
